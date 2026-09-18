@@ -1,21 +1,33 @@
 # Noto Emoji on Windows
 
-Replace the Windows system emoji font with Google's **Noto Color Emoji** while keeping Windows' existing `Segoe UI Emoji` registration.
+Replace Windows' system emoji font with Google's **Noto Color Emoji**, while keeping the identity Windows expects from `Segoe UI Emoji`.
 
 > [!WARNING]
-> Experimental. This project replaces a Windows system font. A verified backup is created before anything is staged, and the actual swap happens only after reboot. Test on a machine you can recover first.
+> Experimental. This modifies a Windows system font. The original font is backed up and the actual swap is queued for the next reboot, but you should still test on a machine you can recover.
 
 ## Why this exists
 
-Google publishes `NotoColorEmoji_WindowsCompatible.ttf`, a Windows-installable CBDT/CBLC build of Noto Color Emoji. Simply installing it does not make Windows use it as the system emoji font because Windows still resolves emoji through `Segoe UI Emoji`.
+Windows normally resolves system emoji through `Segoe UI Emoji` / `seguiemj.ttf`. Installing Noto Color Emoji alongside it therefore does not make Windows use Noto everywhere.
 
-Older replacement projects solved this by giving Google's font the same internal names as `Segoe UI Emoji`. This project does the same thing, but **copies the complete `name` table from the Segoe UI Emoji font on your own Windows installation at build time** instead of shipping a stale hard-coded table.
+Google already ships `NotoColorEmoji_WindowsCompatible.ttf`. Its own build process adds a Windows BMP cmap and empty `glyf/loca` outline tables specifically for compatibility. This project keeps that work and adds the remaining pieces needed to act as a system replacement.
 
-The source font is downloaded directly from Google's official repository:
+The converter:
 
-`https://raw.githubusercontent.com/googlefonts/noto-emoji/main/fonts/NotoColorEmoji_WindowsCompatible.ttf`
+- preserves Google's Noto artwork, color tables, GSUB data and OFL metadata;
+- ensures Windows-compatible format 4 and format 12 cmap subtables exist;
+- copies only the **font identity** name records from the machine's current `Segoe UI Emoji`;
+- copies relevant DirectWrite typography metrics from that same local Segoe build instead of hard-coding one Windows version;
+- keeps the output as `seguiemj.ttf` so Windows' existing registration can be reused.
 
-No Google or Microsoft font binaries are stored in this repository.
+No Google or Microsoft font binaries are committed to this repository.
+
+## Inspiration
+
+The compatibility work is informed by [jjjuk/emoji-win](https://github.com/jjjuk/emoji-win), which converts Apple Color Emoji for Windows 11 by fixing Windows cmap/name/OS2/head/post compatibility and handling DirectWrite-specific bitmap behavior.
+
+Noto needs less surgery than Apple because Google's `WindowsCompatible` build already contains the Windows cmap + `glyf/loca` compatibility layer.
+
+Older Noto replacement work such as [perguto/Country-Flag-Emojis-for-Windows](https://github.com/perguto/Country-Flag-Emojis-for-Windows) also demonstrated that changing the internal font identity to `Segoe UI Emoji` can make Noto act as Windows' default emoji font.
 
 ## Requirements
 
@@ -24,7 +36,7 @@ No Google or Microsoft font binaries are stored in this repository.
 - Python 3.9+
 - `fonttools`
 
-Install the Python dependency:
+Install the dependency:
 
 ```powershell
 py -m pip install -r requirements.txt
@@ -32,23 +44,16 @@ py -m pip install -r requirements.txt
 
 ## Apply
 
-Run PowerShell as Administrator:
+Open PowerShell as Administrator:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\Apply-NotoEmoji.ps1
 ```
 
-The script will:
+The script downloads Google's official `NotoColorEmoji_WindowsCompatible.ttf`, backs up `C:\Windows\Fonts\seguiemj.ttf`, builds the replacement, verifies the staged copy, queues the swap with `MoveFileEx(..., MOVEFILE_DELAY_UNTIL_REBOOT)`, and requests a font-cache rebuild.
 
-1. Download Google's latest `NotoColorEmoji_WindowsCompatible.ttf`.
-2. Copy your current `C:\Windows\Fonts\seguiemj.ttf` as a local backup.
-3. Build a Noto font whose internal `name` table matches your current Segoe UI Emoji.
-4. Validate the generated font and stage it as `seguiemj.ttf.new`.
-5. Queue the replacement with `MoveFileEx(..., MOVEFILE_DELAY_UNTIL_REBOOT)`.
-6. Clear/schedule rebuilding of the Windows font cache.
-
-Nothing is swapped until you reboot.
+**Nothing is replaced until you reboot.**
 
 ## Restore
 
@@ -58,38 +63,27 @@ Run as Administrator:
 .\Restore-SegoeEmoji.ps1
 ```
 
-Then reboot. The script stages the original backed-up Segoe UI Emoji font for restoration.
+Then reboot. The original font stored in `backup\seguiemj-ORIGINAL.ttf` is staged back into place.
 
 ## Build only
 
-You can build without installing:
+After the source font exists in `work\`:
 
 ```powershell
-py .\scripts\build_font.py `
-  --source .\work\NotoColorEmoji_WindowsCompatible.ttf `
-  --template C:\Windows\Fonts\seguiemj.ttf `
-  --output .\dist\seguiemj.ttf
+py .\scripts\build_font.py --source .\work\NotoColorEmoji_WindowsCompatible.ttf --template C:\Windows\Fonts\seguiemj.ttf --output .\dist\seguiemj.ttf
 ```
 
 ## What to test
 
-After reboot, check emoji in:
+After reboot, check Edge/Chromium, Start/Search, Settings, Notepad, OneNote, Terminal/PowerShell, the `Win + .` emoji picker, flags, skin tones and ZWJ sequences.
 
-- Edge / Chromium
-- Windows Search and Start
-- Settings
-- Notepad
-- OneNote
-- Terminal / PowerShell
-- Emoji picker (`Win + .`)
-- ZWJ sequences, skin tones and flags
+Application behavior can still differ because some apps use their own font or emoji rendering stack. `emoji-win` likewise documents good results on current Windows 11/browser apps while noting that some native apps can still bypass the converted font.
 
-If one app still shows Segoe or monochrome glyphs, note the app and rendering path in an issue. Some applications bundle or force their own emoji/font stack.
-
-## Upstream / references
+## Upstream
 
 - Google Noto Emoji: https://github.com/googlefonts/noto-emoji
-- Google Windows-compatible font: `fonts/NotoColorEmoji_WindowsCompatible.ttf`
+- Google source font: `fonts/NotoColorEmoji_WindowsCompatible.ttf`
+- emoji-win: https://github.com/jjjuk/emoji-win
 - fontTools: https://github.com/fonttools/fonttools
 
-The Noto Emoji font is licensed by Google under the SIL Open Font License 1.1. This repository's scripts are MIT licensed.
+Noto Emoji is distributed under the SIL Open Font License 1.1. The scripts in this repository are MIT licensed.
