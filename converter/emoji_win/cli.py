@@ -12,7 +12,7 @@ from .font_diagnostics import print_diagnostics
 
 NOTO_URL = (
     "https://raw.githubusercontent.com/googlefonts/noto-emoji/"
-    "main/fonts/NotoColorEmoji_WindowsCompatible.ttf"
+    "main/2D/fonts/NotoColorEmoji_WindowsCompatible.ttf"
 )
 
 
