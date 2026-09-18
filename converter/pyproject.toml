@@ -2,7 +2,7 @@
 name = "noto-emoji-win"
 version = "0.1.0"
 description = "Convert Google Noto Color Emoji into a Windows Segoe UI Emoji replacement"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = [
   "fonttools>=4.59,<5",
 ]
