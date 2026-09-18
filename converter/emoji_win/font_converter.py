@@ -89,6 +89,10 @@ def tune_directwrite(source: TTFont, template: TTFont) -> None:
         src = source["OS/2"]
         tpl = template["OS/2"]
 
+        src_upm = source["head"].unitsPerEm if "head" in source else 1000
+        tpl_upm = template["head"].unitsPerEm if "head" in template else src_upm
+        scale = src_upm / tpl_upm if tpl_upm else 1.0
+
         for attr in (
             "sTypoAscender",
             "sTypoDescender",
@@ -97,7 +101,7 @@ def tune_directwrite(source: TTFont, template: TTFont) -> None:
             "usWinDescent",
         ):
             if hasattr(src, attr) and hasattr(tpl, attr):
-                setattr(src, attr, getattr(tpl, attr))
+                setattr(src, attr, round(getattr(tpl, attr) * scale))
 
         # Regular + USE_TYPO_METRICS; keep unrelated selection flags.
         src.fsSelection = (src.fsSelection | (1 << 6) | (1 << 7)) & ~(1 << 0)
