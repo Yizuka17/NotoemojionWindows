@@ -1,0 +1,6 @@
+work/
+dist/
+backup/
+*.partial
+__pycache__/
+*.pyc
