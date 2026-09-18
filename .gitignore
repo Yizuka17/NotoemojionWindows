@@ -1,6 +1,9 @@
-work/
-dist/
-backup/
-*.partial
+.venv/
 __pycache__/
 *.pyc
+*.partial
+
+fonts/*.ttf
+!fonts/.gitkeep
+
+.DS_Store
