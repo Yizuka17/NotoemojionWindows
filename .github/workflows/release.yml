@@ -1,0 +1,133 @@
+name: Build and Release Noto Emoji
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.2.0 (leave blank for automatic version)"
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - ".release-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "fonttools>=4.59,<5"
+
+      - name: Choose release version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:INPUT_VERSION)) {
+            $tag = "v0.1.$env:GITHUB_RUN_NUMBER"
+          } else {
+            $tag = $env:INPUT_VERSION.Trim()
+            if (-not $tag.StartsWith("v")) {
+              $tag = "v$tag"
+            }
+          }
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_NAME=NotoEmojiOnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Release tag: $tag"
+
+      - name: Download official Noto Color Emoji
+        shell: pwsh
+        run: |
+          python .\emoji-win.py download
+
+      - name: Convert using Windows Segoe UI Emoji template
+        shell: pwsh
+        run: |
+          $template = Join-Path $env:WINDIR "Fonts\seguiemj.ttf"
+          if (-not (Test-Path $template)) {
+            throw "Segoe UI Emoji template not found: $template"
+          }
+
+          python .\emoji-win.py convert --template "$template"
+
+          if (-not (Test-Path ".\fonts\SegoeUIEmoji.ttf")) {
+            throw "Converted font was not produced."
+          }
+
+      - name: Diagnose converted font
+        shell: pwsh
+        run: |
+          python .\emoji-win.py diagnose .\fonts\SegoeUIEmoji.ttf | Tee-Object -FilePath .\font-diagnostics.txt
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path "release" $env:PACKAGE_NAME
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+          Copy-Item ".\fonts\SegoeUIEmoji.ttf" (Join-Path $releaseDir "SegoeUIEmoji.ttf")
+          Copy-Item ".\converter\windows_font_manager.bat" (Join-Path $releaseDir "windows_font_manager.bat")
+          Copy-Item ".\converter\windows_font_manager.ps1" (Join-Path $releaseDir "windows_font_manager.ps1")
+          Copy-Item ".\README.md" (Join-Path $releaseDir "README.md")
+          Copy-Item ".\ADVANCED_PERMISSIONS.md" (Join-Path $releaseDir "ADVANCED_PERMISSIONS.md")
+          Copy-Item ".\LICENSE" (Join-Path $releaseDir "LICENSE")
+          Copy-Item ".\font-diagnostics.txt" (Join-Path $releaseDir "font-diagnostics.txt")
+
+          $zip = Join-Path "release" "$($env:PACKAGE_NAME).zip"
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zip -CompressionLevel Optimal -Force
+
+          $fontHash = (Get-FileHash ".\fonts\SegoeUIEmoji.ttf" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "$fontHash  SegoeUIEmoji.ttf"
+            "$zipHash  $($env:PACKAGE_NAME).zip"
+          ) | Set-Content ".\release\SHA256SUMS.txt" -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            release/${{ env.PACKAGE_NAME }}.zip
+            release/SHA256SUMS.txt
+            fonts/SegoeUIEmoji.ttf
+            font-diagnostics.txt
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = @"
+          Automated Windows build of Google's Noto Color Emoji as a Segoe UI Emoji replacement.
+
+          Built on GitHub Actions using the current Windows runner's C:\Windows\Fonts\seguiemj.ttf as the compatibility template.
+
+          Included:
+          - SegoeUIEmoji.ttf
+          - $($env:PACKAGE_NAME).zip
+          - SHA256SUMS.txt
+
+          This is experimental system-font replacement software. Keep the original Segoe UI Emoji backup and reboot after install/restore.
+          "@
+
+          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto Emoji on Windows $env:RELEASE_TAG" --notes "$notes"
