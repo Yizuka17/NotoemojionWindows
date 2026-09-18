@@ -81,11 +81,14 @@ jobs:
         shell: pwsh
         run: |
           $releaseDir = Join-Path "release" $env:PACKAGE_NAME
-          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $fontsDir = Join-Path $releaseDir "fonts"
+          $converterDir = Join-Path $releaseDir "converter"
+          New-Item -ItemType Directory -Path $fontsDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $converterDir -Force | Out-Null
 
-          Copy-Item ".\fonts\SegoeUIEmoji.ttf" (Join-Path $releaseDir "SegoeUIEmoji.ttf")
-          Copy-Item ".\converter\windows_font_manager.bat" (Join-Path $releaseDir "windows_font_manager.bat")
-          Copy-Item ".\converter\windows_font_manager.ps1" (Join-Path $releaseDir "windows_font_manager.ps1")
+          Copy-Item ".\fonts\SegoeUIEmoji.ttf" (Join-Path $fontsDir "SegoeUIEmoji.ttf")
+          Copy-Item ".\converter\windows_font_manager.bat" (Join-Path $converterDir "windows_font_manager.bat")
+          Copy-Item ".\converter\windows_font_manager.ps1" (Join-Path $converterDir "windows_font_manager.ps1")
           Copy-Item ".\README.md" (Join-Path $releaseDir "README.md")
           Copy-Item ".\ADVANCED_PERMISSIONS.md" (Join-Path $releaseDir "ADVANCED_PERMISSIONS.md")
           Copy-Item ".\LICENSE" (Join-Path $releaseDir "LICENSE")
