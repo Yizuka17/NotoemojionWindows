@@ -34,8 +34,13 @@ def diagnose_font(path: str | Path) -> dict:
             if "CBDT" in font and "CBLC" in font
             else "COLR/CPAL"
             if "COLR" in font and "CPAL" in font
+            else "sbix"
+            if "sbix" in font
+            else "SVG"
+            if "SVG " in font
             else None
         ),
+        "units_per_em": font["head"].unitsPerEm if "head" in font else None,
         "windows_outline_compat": has_windows_outline_compat(font),
         "cmaps": cmaps,
         "bitmap_strikes": analyze_bitmap_strikes(font),
@@ -50,7 +55,9 @@ def print_diagnostics(path: str | Path) -> None:
     print(f"Full name: {info['full_name']!r}")
     print(f"PostScript: {info['postscript']!r}")
     print(f"Color format: {info['color_format']}")
+    print(f"Units per em: {info['units_per_em']}")
     print(f"glyf/loca compatibility: {info['windows_outline_compat']}")
+    print(f"Tables: {', '.join(info['tables'])}")
 
     print("cmap subtables:")
     for cmap in info["cmaps"]:
