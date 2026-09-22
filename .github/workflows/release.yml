@@ -1,10 +1,10 @@
-name: Build and Release Noto Emoji
+name: Build and Release Noto 3D Emoji
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example v0.2.0 (leave blank for automatic version)"
+        description: "Release version, for example v0.2.0-3d (leave blank for automatic version)"
         required: false
         type: string
   push:
@@ -41,7 +41,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:INPUT_VERSION)) {
-            $tag = "v0.1.$env:GITHUB_RUN_NUMBER"
+            $tag = "v0.2.$env:GITHUB_RUN_NUMBER-3d"
           } else {
             $tag = $env:INPUT_VERSION.Trim()
             if (-not $tag.StartsWith("v")) {
@@ -50,15 +50,31 @@ jobs:
           }
 
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "PACKAGE_NAME=NotoEmojiOnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_NAME=Noto3DOnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Release tag: $tag"
 
-      - name: Download official Noto Color Emoji
+      - name: Download official Noto 3D 128
         shell: pwsh
         run: |
-          python .\emoji-win.py download
+          python .\emoji-win.py download --variant 3d
 
-      - name: Convert using Windows Segoe UI Emoji template
+          $source = ".\fonts\Noto-3D-128.ttf"
+          if (-not (Test-Path $source)) {
+            throw "Noto 3D source font was not downloaded."
+          }
+
+          $size = (Get-Item $source).Length
+          Write-Host "Noto 3D source size: $size bytes"
+          if ($size -lt 100MB) {
+            throw "Downloaded Noto 3D font is unexpectedly small; a Git LFS pointer may have been downloaded instead."
+          }
+
+      - name: Diagnose original Noto 3D
+        shell: pwsh
+        run: |
+          python .\emoji-win.py diagnose .\fonts\Noto-3D-128.ttf | Tee-Object -FilePath .\source-font-diagnostics.txt
+
+      - name: Convert Noto 3D using Windows Segoe UI Emoji template
         shell: pwsh
         run: |
           $template = Join-Path $env:WINDIR "Fonts\seguiemj.ttf"
@@ -66,7 +82,7 @@ jobs:
             throw "Segoe UI Emoji template not found: $template"
           }
 
-          python .\emoji-win.py convert --template "$template"
+          python .\emoji-win.py convert --variant 3d --template "$template"
 
           if (-not (Test-Path ".\fonts\SegoeUIEmoji.ttf")) {
             throw "Converted font was not produced."
@@ -92,6 +108,7 @@ jobs:
           Copy-Item ".\README.md" (Join-Path $releaseDir "README.md")
           Copy-Item ".\ADVANCED_PERMISSIONS.md" (Join-Path $releaseDir "ADVANCED_PERMISSIONS.md")
           Copy-Item ".\LICENSE" (Join-Path $releaseDir "LICENSE")
+          Copy-Item ".\source-font-diagnostics.txt" (Join-Path $releaseDir "source-font-diagnostics.txt")
           Copy-Item ".\font-diagnostics.txt" (Join-Path $releaseDir "font-diagnostics.txt")
 
           $zip = Join-Path "release" "$($env:PACKAGE_NAME).zip"
@@ -112,6 +129,7 @@ jobs:
             release/${{ env.PACKAGE_NAME }}.zip
             release/SHA256SUMS.txt
             fonts/SegoeUIEmoji.ttf
+            source-font-diagnostics.txt
             font-diagnostics.txt
           if-no-files-found: error
 
@@ -121,16 +139,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $notes = @"
-          Automated Windows build of Google's Noto Color Emoji as a Segoe UI Emoji replacement.
+          Experimental Windows build of Google's new Noto 3D 128 emoji font as a Segoe UI Emoji replacement.
 
-          Built on GitHub Actions using the current Windows runner's C:\Windows\Fonts\seguiemj.ttf as the compatibility template.
+          The workflow:
+          - downloads Google's current Noto-3D-128.ttf;
+          - adds Windows cmap/glyf/loca compatibility when required;
+          - copies Segoe UI Emoji identity and DirectWrite metrics from the current Windows runner;
+          - validates and packages the converted font.
 
           Included:
           - SegoeUIEmoji.ttf
           - $($env:PACKAGE_NAME).zip
           - SHA256SUMS.txt
 
-          This is experimental system-font replacement software. Keep the original Segoe UI Emoji backup and reboot after install/restore.
+          This is an experimental 3D build. Keep the original Segoe UI Emoji backup and reboot after install/restore.
           "@
 
-          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto Emoji on Windows $env:RELEASE_TAG" --notes "$notes"
+          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto 3D on Windows $env:RELEASE_TAG" --notes "$notes"
