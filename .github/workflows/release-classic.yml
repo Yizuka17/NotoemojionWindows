@@ -1,10 +1,10 @@
-name: Build and Release Noto Classic 2D
+name: Build and Release Noto Pinned 2D v2.051
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version, for example v0.3.0-classic15.1 (leave blank for automatic version)"
+        description: "Release version, for example v0.3.0-v2.051 (leave blank for automatic version)"
         required: false
         type: string
   push:
@@ -41,7 +41,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:INPUT_VERSION)) {
-            $tag = "v0.3.$env:GITHUB_RUN_NUMBER-classic15.1"
+            $tag = "v0.3.$env:GITHUB_RUN_NUMBER-v2.051"
           } else {
             $tag = $env:INPUT_VERSION.Trim()
             if (-not $tag.StartsWith("v")) {
@@ -50,14 +50,14 @@ jobs:
           }
 
           "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "PACKAGE_NAME=NotoClassic2DOnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_NAME=Noto2Dv2051OnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Download official Noto Color Emoji v2.042
+      - name: Download official Noto Color Emoji v2.051
         shell: pwsh
         run: |
           python .\emoji-win.py download --variant classic
 
-          $source = ".\fonts\NotoColorEmoji_WindowsCompatible-v2.042.ttf"
+          $source = ".\fonts\NotoColorEmoji_WindowsCompatible-v2.051.ttf"
           if (-not (Test-Path $source)) {
             throw "Classic Noto source font was not downloaded."
           }
@@ -71,7 +71,7 @@ jobs:
       - name: Diagnose original classic font
         shell: pwsh
         run: |
-          python .\emoji-win.py diagnose .\fonts\NotoColorEmoji_WindowsCompatible-v2.042.ttf | Tee-Object -FilePath .\source-font-diagnostics.txt
+          python .\emoji-win.py diagnose .\fonts\NotoColorEmoji_WindowsCompatible-v2.051.ttf | Tee-Object -FilePath .\source-font-diagnostics.txt
 
       - name: Convert classic Noto using Windows Segoe UI Emoji template
         shell: pwsh
@@ -140,10 +140,10 @@ jobs:
           $notes = @"
           Classic Google Noto Color Emoji 2D for Windows.
 
-          Source is pinned to Google's official noto-emoji v2.042 tag, corresponding to the Emoji 15.1-era classic 2D artwork.
+          Source is pinned to Google's official noto-emoji v2.051 tag, corresponding to the the same v2.051 Windows-compatible font line used by the earlier Win10 script.
 
           The workflow:
-          - downloads NotoColorEmoji_WindowsCompatible.ttf from v2.042;
+          - downloads NotoColorEmoji_WindowsCompatible.ttf from v2.051;
           - copies Segoe UI Emoji identity and DirectWrite metrics from the current Windows runner;
           - validates and packages the converted font.
 
@@ -155,4 +155,4 @@ jobs:
           This build is intentionally pinned and will not change when Google updates the main branch.
           "@
 
-          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto Classic 2D on Windows $env:RELEASE_TAG" --notes "$notes"
+          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto Pinned 2D v2.051 on Windows $env:RELEASE_TAG" --notes "$notes"
