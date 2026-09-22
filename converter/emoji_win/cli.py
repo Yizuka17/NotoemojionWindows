@@ -27,6 +27,14 @@ VARIANTS = {
         "filename": "Noto-3D-128.ttf",
         "label": "Noto 3D 128",
     },
+    "classic": {
+        "url": (
+            "https://raw.githubusercontent.com/googlefonts/noto-emoji/"
+            "v2.042/fonts/NotoColorEmoji_WindowsCompatible.ttf"
+        ),
+        "filename": "NotoColorEmoji_WindowsCompatible-v2.042.ttf",
+        "label": "Noto Color Emoji Classic 15.1 (v2.042)",
+    },
 }
 
 
