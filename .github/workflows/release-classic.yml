@@ -1,0 +1,158 @@
+name: Build and Release Noto Classic 2D
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example v0.3.0-classic15.1 (leave blank for automatic version)"
+        required: false
+        type: string
+  push:
+    branches:
+      - main
+    paths:
+      - ".release-classic-trigger"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install converter dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "fonttools>=4.59,<5"
+
+      - name: Choose release version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:INPUT_VERSION)) {
+            $tag = "v0.3.$env:GITHUB_RUN_NUMBER-classic15.1"
+          } else {
+            $tag = $env:INPUT_VERSION.Trim()
+            if (-not $tag.StartsWith("v")) {
+              $tag = "v$tag"
+            }
+          }
+
+          "RELEASE_TAG=$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PACKAGE_NAME=NotoClassic2DOnWindows-$tag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Download official Noto Color Emoji v2.042
+        shell: pwsh
+        run: |
+          python .\emoji-win.py download --variant classic
+
+          $source = ".\fonts\NotoColorEmoji_WindowsCompatible-v2.042.ttf"
+          if (-not (Test-Path $source)) {
+            throw "Classic Noto source font was not downloaded."
+          }
+
+          $size = (Get-Item $source).Length
+          Write-Host "Classic source size: $size bytes"
+          if ($size -lt 10MB) {
+            throw "Downloaded classic font is unexpectedly small."
+          }
+
+      - name: Diagnose original classic font
+        shell: pwsh
+        run: |
+          python .\emoji-win.py diagnose .\fonts\NotoColorEmoji_WindowsCompatible-v2.042.ttf | Tee-Object -FilePath .\source-font-diagnostics.txt
+
+      - name: Convert classic Noto using Windows Segoe UI Emoji template
+        shell: pwsh
+        run: |
+          $template = Join-Path $env:WINDIR "Fonts\seguiemj.ttf"
+          if (-not (Test-Path $template)) {
+            throw "Segoe UI Emoji template not found: $template"
+          }
+
+          python .\emoji-win.py convert --variant classic --template "$template"
+
+          if (-not (Test-Path ".\fonts\SegoeUIEmoji.ttf")) {
+            throw "Converted font was not produced."
+          }
+
+      - name: Diagnose converted font
+        shell: pwsh
+        run: |
+          python .\emoji-win.py diagnose .\fonts\SegoeUIEmoji.ttf | Tee-Object -FilePath .\font-diagnostics.txt
+
+      - name: Package release
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path "release" $env:PACKAGE_NAME
+          $fontsDir = Join-Path $releaseDir "fonts"
+          $converterDir = Join-Path $releaseDir "converter"
+          New-Item -ItemType Directory -Path $fontsDir -Force | Out-Null
+          New-Item -ItemType Directory -Path $converterDir -Force | Out-Null
+
+          Copy-Item ".\fonts\SegoeUIEmoji.ttf" (Join-Path $fontsDir "SegoeUIEmoji.ttf")
+          Copy-Item ".\converter\windows_font_manager.bat" (Join-Path $converterDir "windows_font_manager.bat")
+          Copy-Item ".\converter\windows_font_manager.ps1" (Join-Path $converterDir "windows_font_manager.ps1")
+          Copy-Item ".\README.md" (Join-Path $releaseDir "README.md")
+          Copy-Item ".\ADVANCED_PERMISSIONS.md" (Join-Path $releaseDir "ADVANCED_PERMISSIONS.md")
+          Copy-Item ".\LICENSE" (Join-Path $releaseDir "LICENSE")
+          Copy-Item ".\source-font-diagnostics.txt" (Join-Path $releaseDir "source-font-diagnostics.txt")
+          Copy-Item ".\font-diagnostics.txt" (Join-Path $releaseDir "font-diagnostics.txt")
+
+          $zip = Join-Path "release" "$($env:PACKAGE_NAME).zip"
+          Compress-Archive -Path "$releaseDir\*" -DestinationPath $zip -CompressionLevel Optimal -Force
+
+          $fontHash = (Get-FileHash ".\fonts\SegoeUIEmoji.ttf" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $zipHash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            "$fontHash  SegoeUIEmoji.ttf"
+            "$zipHash  $($env:PACKAGE_NAME).zip"
+          ) | Set-Content ".\release\SHA256SUMS.txt" -Encoding ascii
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: |
+            release/${{ env.PACKAGE_NAME }}.zip
+            release/SHA256SUMS.txt
+            fonts/SegoeUIEmoji.ttf
+            source-font-diagnostics.txt
+            font-diagnostics.txt
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = @"
+          Classic Google Noto Color Emoji 2D for Windows.
+
+          Source is pinned to Google's official noto-emoji v2.042 tag, corresponding to the Emoji 15.1-era classic 2D artwork.
+
+          The workflow:
+          - downloads NotoColorEmoji_WindowsCompatible.ttf from v2.042;
+          - copies Segoe UI Emoji identity and DirectWrite metrics from the current Windows runner;
+          - validates and packages the converted font.
+
+          Included:
+          - SegoeUIEmoji.ttf
+          - $($env:PACKAGE_NAME).zip
+          - SHA256SUMS.txt
+
+          This build is intentionally pinned and will not change when Google updates the main branch.
+          "@
+
+          gh release create "$env:RELEASE_TAG" ".\fonts\SegoeUIEmoji.ttf" ".\release\$($env:PACKAGE_NAME).zip" ".\release\SHA256SUMS.txt" --target "$env:GITHUB_SHA" --title "Noto Classic 2D on Windows $env:RELEASE_TAG" --notes "$notes"
