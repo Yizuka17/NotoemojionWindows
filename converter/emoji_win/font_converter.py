@@ -6,8 +6,9 @@ import hashlib
 import os
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
+from fontTools.pens.ttGlyphPen import TTGlyphPen
 
 IDENTITY_NAME_IDS = {1, 2, 3, 4, 6, 16, 17, 21, 22, 25}
 
@@ -65,6 +66,21 @@ def ensure_windows_cmaps(font: TTFont) -> None:
         cmap.tables.append(fmt12)
 
 
+def ensure_windows_outline_compat(font: TTFont) -> None:
+    """Add empty glyf/loca tables using the same compatibility trick as Noto's Windows build."""
+    if "glyf" in font and "loca" in font:
+        return
+
+    pen = TTGlyphPen(None)
+    empty_glyph = pen.glyph()
+    glyph_order = font.getGlyphOrder()
+
+    font["loca"] = newTable("loca")
+    font["glyf"] = glyf = newTable("glyf")
+    glyf.glyphOrder = glyph_order
+    glyf.glyphs = {name: empty_glyph for name in glyph_order}
+
+
 def copy_segoe_identity(source: TTFont, template: TTFont) -> int:
     source_name = source["name"]
     template_name = template["name"]
@@ -113,7 +129,7 @@ def tune_directwrite(source: TTFont, template: TTFont) -> None:
         source["post"].formatType = 3.0
 
 
-def validate_source(font: TTFont) -> None:
+def validate_source(font: TTFont, require_windows_outline: bool = False) -> None:
     required = {"cmap", "name", "head", "hhea", "maxp", "hmtx", "OS/2"}
     missing = sorted(required - set(font.keys()))
     if missing:
@@ -122,14 +138,17 @@ def validate_source(font: TTFont) -> None:
     has_color = (
         {"CBDT", "CBLC"} <= set(font.keys())
         or {"COLR", "CPAL"} <= set(font.keys())
+        or "sbix" in font
+        or "SVG " in font
     )
     if not has_color:
-        raise RuntimeError("Source font has no supported color emoji tables.")
-
-    if "glyf" not in font or "loca" not in font:
         raise RuntimeError(
-            "Source has no glyf/loca tables. Use NotoColorEmoji_WindowsCompatible.ttf."
+            "Source font has no recognized color emoji tables "
+            "(CBDT/CBLC, COLR/CPAL, sbix or SVG)."
         )
+
+    if require_windows_outline and ("glyf" not in font or "loca" not in font):
+        raise RuntimeError("Converted font is missing Windows glyf/loca compatibility tables.")
 
 
 def _identity_snapshot(font: TTFont):
@@ -166,6 +185,7 @@ def convert_noto_to_windows(
 
     validate_source(source)
     ensure_windows_cmaps(source)
+    ensure_windows_outline_compat(source)
     copied = copy_segoe_identity(source, template)
     tune_directwrite(source, template)
 
@@ -179,7 +199,7 @@ def convert_noto_to_windows(
     source.save(temp, reorderTables=None)
 
     built = TTFont(temp, recalcBBoxes=False, recalcTimestamp=False)
-    validate_source(built)
+    validate_source(built, require_windows_outline=True)
 
     expected = _identity_snapshot(template)
     actual = _identity_snapshot(built)
@@ -201,6 +221,12 @@ def convert_noto_to_windows(
             "CBDT/CBLC"
             if "CBDT" in built and "CBLC" in built
             else "COLR/CPAL"
+            if "COLR" in built and "CPAL" in built
+            else "sbix"
+            if "sbix" in built
+            else "SVG"
+            if "SVG " in built
+            else "unknown"
         )
         print(f"Built: {output_path}")
         print(f"Color format: {color_format}")
